@@ -734,7 +734,12 @@ function log(msg) {
   const hora = new Date().toLocaleTimeString('pt-BR');
   $('#log').innerHTML = `[${hora}] ${msg}<br>` + $('#log').innerHTML;
 }
-
+function setBadge(texto, tipo = '') {
+  const el = $('#statusBadge');
+  if (!el) return;
+  el.textContent = texto;
+  el.className = 'status' + (tipo ? ' ' + tipo : '');
+}
 function persistirLocal() {
   try {
     localStorage.setItem('testePlanilhaDB', JSON.stringify(db));
