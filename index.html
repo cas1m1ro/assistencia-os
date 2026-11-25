@@ -674,7 +674,9 @@
         <div class="grid3">
           <div>
             <label class="field">Cliente *</label>
-            <input id="osClient" required placeholder="Nome completo">
+            <input id="osClient" required placeholder="Digite ou escolha nome, tel ou aparelho..." list="listaSugestaoClientes">
+            <datalist id="listaSugestaoClientes"></datalist>
+            <div id="osClienteStatus" class="muted" style="font-size:11px;margin-top:3px">Busca automática por nome, telefone ou aparelho cadastrado</div>
           </div>
           <div>
             <label class="field">WhatsApp</label>
@@ -2509,6 +2511,7 @@ function trocarAbaPrincipal(aba) {
   });
 
   if (aba === 'inicio') atualizarCardsInicio();
+  if (aba === 'os') atualizarDatalistClientesOS();
   if (aba === 'clientes') renderClientes();
   if (aba === 'rapida') {
     atualizarSeletorEstoqueVR();
@@ -3600,6 +3603,171 @@ function renderEstoque() {
 let ultimoClienteSalvo = null;
 let clienteSelecionadoHistorico = null;
 
+function normalizarTextoBusca(str) {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function soDigitos(s) {
+  return String(s || '').replace(/\D/g, '');
+}
+
+function obterBaseClientesParaOS() {
+  const mapa = new Map();
+
+  (db.clients || []).forEach(c => {
+    const nome = String(c.name || '').trim();
+    if (!nome) return;
+    mapa.set(normalizarTextoBusca(nome), {
+      name: nome,
+      phone: c.phone || '',
+      doc: c.doc || '',
+      address: c.address || '',
+      houseNumber: c.houseNumber || '',
+      neighborhood: c.neighborhood || '',
+      city: c.city || '',
+      state: c.state || '',
+      ultimoAparelho: ''
+    });
+  });
+
+  (db.orders || []).forEach(o => {
+    const nome = String(o.client || '').trim();
+    if (!nome) return;
+    const chave = normalizarTextoBusca(nome);
+    const atual = mapa.get(chave) || {
+      name: nome,
+      phone: o.phone || '',
+      doc: o.doc || '',
+      address: o.address || '',
+      houseNumber: o.houseNumber || '',
+      neighborhood: o.neighborhood || '',
+      city: o.city || '',
+      state: o.state || '',
+      ultimoAparelho: ''
+    };
+    if (!atual.phone && o.phone) atual.phone = o.phone;
+    if (!atual.doc && o.doc) atual.doc = o.doc;
+    if (!atual.address && o.address) atual.address = o.address;
+    if (!atual.houseNumber && o.houseNumber) atual.houseNumber = o.houseNumber;
+    if (!atual.neighborhood && o.neighborhood) atual.neighborhood = o.neighborhood;
+    if (!atual.city && o.city) atual.city = o.city;
+    if (!atual.state && o.state) atual.state = o.state;
+    if (o.device) atual.ultimoAparelho = o.device;
+    mapa.set(chave, atual);
+  });
+
+  return Array.from(mapa.values());
+}
+
+function atualizarDatalistClientesOS() {
+  const input = $('#osClient');
+  const dl = $('#listaSugestaoClientes');
+  if (!input || !dl) return;
+  input.setAttribute('list', 'listaSugestaoClientes');
+
+  const clientes = obterBaseClientesParaOS();
+  dl.innerHTML = clientes.map(c => {
+    const extra = [c.phone, c.ultimoAparelho, c.address].filter(Boolean).join(' • ');
+    return `<option value="${String(c.name).replace(/"/g, '&quot;')}" label="${String(extra).replace(/"/g, '&quot;')}"></option>`;
+  }).join('');
+}
+
+function salvarOuAtualizarClienteSemDuplicar(dadosCliente) {
+  const nome = String(dadosCliente.name || '').trim();
+  if (!nome) return;
+  const chaveNome = normalizarTextoBusca(nome);
+  const telDigitos = soDigitos(dadosCliente.phone);
+
+  if (!Array.isArray(db.clients)) db.clients = [];
+
+  const idx = db.clients.findIndex(c => {
+    const mesmoNome = normalizarTextoBusca(c.name) === chaveNome;
+    const mesmoTel = telDigitos && soDigitos(c.phone) === telDigitos;
+    return mesmoNome || mesmoTel;
+  });
+
+  const registro = {
+    id: idx >= 0 ? db.clients[idx].id : String(Date.now()).slice(-6),
+    name: nome,
+    phone: dadosCliente.phone || (idx >= 0 ? db.clients[idx].phone : '') || '',
+    doc: dadosCliente.doc || (idx >= 0 ? db.clients[idx].doc : '') || '',
+    address: dadosCliente.address || (idx >= 0 ? db.clients[idx].address : '') || '',
+    houseNumber: dadosCliente.houseNumber || (idx >= 0 ? db.clients[idx].houseNumber : '') || '',
+    neighborhood: dadosCliente.neighborhood || (idx >= 0 ? db.clients[idx].neighborhood : '') || '',
+    city: dadosCliente.city || (idx >= 0 ? db.clients[idx].city : '') || '',
+    state: (dadosCliente.state || (idx >= 0 ? db.clients[idx].state : '') || '').toUpperCase()
+  };
+
+  if (idx >= 0) {
+    db.clients[idx] = { ...db.clients[idx], ...registro };
+  } else {
+    db.clients.push(registro);
+  }
+  return registro;
+}
+
+function tentarAutoPreencherClienteOS() {
+  const input = $('#osClient');
+  const statusEl = $('#osClienteStatus');
+  if (!input) return;
+
+  const bruto = String(input.value || '').trim();
+  const digitado = normalizarTextoBusca(bruto);
+  const digitos = soDigitos(bruto);
+
+  if (!digitado) {
+    if (statusEl) statusEl.textContent = 'Busca automática por nome, telefone ou aparelho cadastrado';
+    return;
+  }
+
+  const clientes = obterBaseClientesParaOS();
+  const exatoNome = clientes.find(c => normalizarTextoBusca(c.name) === digitado);
+  const exatoTel = !exatoNome && digitos.length >= 8
+    ? clientes.find(c => soDigitos(c.phone) === digitos)
+    : null;
+  const encontrado = exatoNome || exatoTel;
+
+  if (encontrado) {
+    input.value = encontrado.name;
+    if (encontrado.phone && !$('#osPhone').value.trim()) $('#osPhone').value = encontrado.phone;
+    if (encontrado.doc && !$('#osDoc').value.trim()) $('#osDoc').value = encontrado.doc;
+    if (encontrado.address && !$('#osAddress').value.trim()) $('#osAddress').value = encontrado.address;
+    if (encontrado.houseNumber && !$('#osNumber').value.trim()) $('#osNumber').value = encontrado.houseNumber;
+    if (encontrado.neighborhood && !$('#osNeighborhood').value.trim()) $('#osNeighborhood').value = encontrado.neighborhood;
+    if (encontrado.city && !$('#osCity').value.trim()) $('#osCity').value = encontrado.city;
+    if (encontrado.state && !$('#osState').value.trim()) $('#osState').value = encontrado.state;
+    if (statusEl) {
+      statusEl.textContent = `✓ Cliente cadastrado encontrado (${encontrado.phone || 'sem telefone'}) — sem duplicar`;
+    }
+    return;
+  }
+
+  const parciais = clientes.filter(c =>
+    normalizarTextoBusca(c.name).includes(digitado) ||
+    (digitos && soDigitos(c.phone).includes(digitos)) ||
+    normalizarTextoBusca(c.ultimoAparelho).includes(digitado)
+  );
+
+  if (statusEl) {
+    if (parciais.length === 1) {
+      const p = parciais[0];
+      statusEl.textContent = `Sugestão: "${p.name}"${p.ultimoAparelho ? ' • ' + p.ultimoAparelho : ''}${p.phone ? ' • ' + p.phone : ''} (selecione na lista ou complete o nome)`;
+    } else if (parciais.length > 1) {
+      statusEl.textContent = `${parciais.length} clientes encontrados: ${parciais.slice(0, 3).map(x => x.name).join(', ')}`;
+    } else {
+      statusEl.textContent = 'Novo cliente — será salvo automaticamente ao concluir a OS';
+    }
+  }
+}
+
+$('#osClient')?.addEventListener('input', tentarAutoPreencherClienteOS);
+$('#osClient')?.addEventListener('change', tentarAutoPreencherClienteOS);
+$('#osClient')?.addEventListener('blur', tentarAutoPreencherClienteOS);
+
 $('#formCliente').onsubmit = async e => {
   e.preventDefault();
   const nome = $('#cliNome').value.trim();
@@ -3611,8 +3779,7 @@ $('#formCliente').onsubmit = async e => {
   const cidade = $('#cliCidade').value.trim();
   const estado = ($('#cliEstado').value || '').trim().toUpperCase();
 
-  const clienteObj = {
-    id: String(Date.now()).slice(-6),
+  const clienteObj = salvarOuAtualizarClienteSemDuplicar({
     name: nome,
     phone: telefone,
     doc,
@@ -3621,26 +3788,18 @@ $('#formCliente').onsubmit = async e => {
     neighborhood: bairro,
     city: cidade,
     state: estado
-  };
-
-  const idxExistente = (db.clients || []).findIndex(
-    c => (c.name || '').toLowerCase() === nome.toLowerCase() && (c.phone || '') === telefone
-  );
-  if (idxExistente >= 0) {
-    db.clients[idxExistente] = { ...db.clients[idxExistente], ...clienteObj };
-  } else {
-    db.clients.push(clienteObj);
-  }
+  });
 
   ultimoClienteSalvo = clienteObj;
   marcarAlteracaoParaSync('client_save');
   persistirLocal();
   renderClientes();
+  atualizarDatalistClientesOS();
 
   $('#bannerClienteTexto').textContent = `${clienteObj.name} • Tel: ${clienteObj.phone || '-'}`;
   $('#bannerClienteSalvo').style.display = 'flex';
   $('#formCliente').reset();
-  log(`Cliente "${clienteObj.name}" cadastrado.`);
+  log(`Cliente "${clienteObj.name}" salvo/atualizado sem duplicação.`);
 
   if (($('#apiUrl').value || '').trim()) await enviarPlanilha();
 };
@@ -3662,6 +3821,7 @@ function preencherOSComCliente(cli) {
   $('#osState').value = cli.state || '';
 
   trocarAbaPrincipal('os');
+  tentarAutoPreencherClienteOS();
   $('#osDevice').focus();
   log(`Dados do cliente "${cli.name}" carregados na Nova OS #${gerarProximoNumeroOS()}.`);
 }
@@ -3734,13 +3894,14 @@ window.iniciarOSPorIndiceCliente = idx => {
 
 window.removerClientePorNome = async nome => {
   if (!confirm(`Remover o cliente "${nome}" da lista de cadastros?`)) return;
-  db.clients = (db.clients || []).filter(c => (c.name || '').toLowerCase() !== String(nome).toLowerCase());
-  if (clienteSelecionadoHistorico && (clienteSelecionadoHistorico.name || '').toLowerCase() === String(nome).toLowerCase()) {
+  db.clients = (db.clients || []).filter(c => normalizarTextoBusca(c.name) !== normalizarTextoBusca(nome));
+  if (clienteSelecionadoHistorico && normalizarTextoBusca(clienteSelecionadoHistorico.name) === normalizarTextoBusca(nome)) {
     fecharHistoricoCliente();
   }
   marcarAlteracaoParaSync('client_delete');
   persistirLocal();
   renderClientes();
+  atualizarDatalistClientesOS();
   log(`Cliente "${nome}" removido.`);
   if (($('#apiUrl').value || '').trim()) await enviarPlanilha();
 };
@@ -3749,7 +3910,7 @@ function obterListaClientesUnificada() {
   const mapa = new Map();
   (db.clients || []).forEach(c => {
     const nomeLimpo = String(c.name || '').trim();
-    const chave = nomeLimpo.toLowerCase();
+    const chave = normalizarTextoBusca(nomeLimpo);
     if (!chave) return;
     mapa.set(chave, {
       name: nomeLimpo,
@@ -3766,7 +3927,7 @@ function obterListaClientesUnificada() {
 
   (db.orders || []).forEach(o => {
     const nomeLimpo = String(o.client || '').trim();
-    const chave = nomeLimpo.toLowerCase();
+    const chave = normalizarTextoBusca(nomeLimpo);
     if (!chave) return;
     if (!mapa.has(chave)) {
       mapa.set(chave, {
@@ -3793,10 +3954,6 @@ function obterListaClientesUnificada() {
   });
 
   return Array.from(mapa.values());
-}
-
-function soDigitos(s) {
-  return String(s || '').replace(/\D/g, '');
 }
 
 function renderClientes() {
@@ -3857,6 +4014,8 @@ function renderClientes() {
       </tr>
     `;
   }).join('') || '<tr><td colspan="5" class="muted" style="text-align:center;padding:18px">Nenhum cliente encontrado para essa pesquisa.</td></tr>';
+
+  atualizarDatalistClientesOS();
 }
 
 /* =========================================================
@@ -4268,6 +4427,17 @@ $('#formEditar').onsubmit = async e => {
     fotos: editFotosTemp.slice()
   };
 
+  salvarOuAtualizarClienteSemDuplicar({
+    name: db.orders[idx].client,
+    phone: db.orders[idx].phone,
+    doc: db.orders[idx].doc,
+    address: db.orders[idx].address,
+    houseNumber: db.orders[idx].houseNumber,
+    neighborhood: db.orders[idx].neighborhood,
+    city: db.orders[idx].city,
+    state: db.orders[idx].state
+  });
+
   marcarAlteracaoParaSync('order_edit');
   persistirLocal();
   render();
@@ -4374,8 +4544,8 @@ $('#btnLimparBase').onclick = async () => {
 function exportarBackupJSON() {
   try {
     const payload = {
-      app: 'AssistenciaPro_OS_v2_9_5',
-      versaoBackup: 2.95,
+      app: 'AssistenciaPro_OS_v2_9_6',
+      versaoBackup: 2.96,
       exportadoEm: new Date().toISOString(),
       apiUrl: ($('#apiUrl').value || '').trim(),
       db
@@ -4385,12 +4555,12 @@ function exportarBackupJSON() {
     const a = document.createElement('a');
     const stamp = hojeISO();
     a.href = url;
-    a.download = `backup-assistencia-os-v2.9.5-${stamp}.json`;
+    a.download = `backup-assistencia-os-v2.9.6-${stamp}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    log(`Backup exportado: backup-assistencia-os-v2.9.5-${stamp}.json (${(db.orders || []).length} OS).`);
+    log(`Backup exportado: backup-assistencia-os-v2.9.6-${stamp}.json (${(db.orders || []).length} OS).`);
   } catch (err) {
     log('Erro ao gerar backup: ' + err.message);
   }
@@ -4549,6 +4719,7 @@ function render() {
 
   atualizarResumoPeriodoData();
   atualizarCardsInicio();
+  atualizarDatalistClientesOS();
 
   const filtroTabela = ($('#filtroOSTabela')?.value || '').trim().toLowerCase();
   const ordensFiltradas = ordens.filter(o => {
@@ -5158,19 +5329,17 @@ $('#formTeste').onsubmit = async e => {
   db.orders.push(ordem);
   normalizarNumeracaoOS();
 
-  if (!db.clients.some(c => (c.name || '').toLowerCase() === ordem.client.toLowerCase())) {
-    db.clients.push({
-      id: String(Date.now()).slice(-6),
-      name: ordem.client,
-      phone: ordem.phone,
-      doc: ordem.doc,
-      address: ordem.address,
-      houseNumber: ordem.houseNumber,
-      neighborhood: ordem.neighborhood,
-      city: ordem.city,
-      state: ordem.state
-    });
-  }
+  salvarOuAtualizarClienteSemDuplicar({
+    name: ordem.client,
+    phone: ordem.phone,
+    doc: ordem.doc,
+    address: ordem.address,
+    houseNumber: ordem.houseNumber,
+    neighborhood: ordem.neighborhood,
+    city: ordem.city,
+    state: ordem.state
+  });
+
   marcarAlteracaoParaSync('order_add');
   persistirLocal();
   render();
@@ -5179,50 +5348,39 @@ $('#formTeste').onsubmit = async e => {
 
   $('#formTeste').reset();
   $('#osKind').value = 'Ordem de Serviço';
+  if ($('#osClienteStatus')) $('#osClienteStatus').textContent = 'Busca automática por nome, telefone ou aparelho cadastrado';
   fotosTemp = [];
   renderThumbs();
   $('#entryDateTime').value = agoraFormatado();
+  $('#partCost').value = '0';
+  $('#servicePrice').value = '0';
+  $('#depositAmount').value = '0';
+  $('#paymentMethod').value = 'Pix';
   calcularFinanceiroForm();
 
-  if (($('#apiUrl')?.value || '').trim()) await enviarPlanilha();
-  else {
-    db.meta = { ...(db.meta || {}), pendingSync: false };
-    persistirLocal();
-    setBadge('Salvo local', 'ok');
-  }
+  if (($('#apiUrl').value || '').trim()) await enviarPlanilha();
 };
 
 $('#btnTestarLer').onclick = carregarDaPlanilha;
+$('#entryDateTime').value = agoraFormatado();
+aplicarEmpresaNaTela();
+carregarCamposImpressoraSAT();
+calcularFinanceiroForm();
+calcularTotalOrcamento();
+atualizarSeletorEstoqueVR();
+selecionarAtalhoPeriodo('30d');
+render();
+renderClientes();
+renderVendasRapidas();
+renderEstoque();
+renderOrcamentos();
+atualizarPainelRedeSync();
 
 if (sessionStorage.getItem('assistenciaProLogado') === '1') {
   liberarAcessoSistema();
 } else {
   prepararTelaLogin(true);
 }
-
-aplicarEmpresaNaTela();
-carregarCamposImpressoraSAT();
-atualizarPainelRedeSync();
-$('#entryDateTime').value = agoraFormatado();
-setInterval(() => {
-  $('#entryDateTime').value = agoraFormatado();
-  if (verificarViradaMesFluxo(true)) render();
-}, 30000);
-calcularFinanceiroForm();
-calcularTotalOrcamento();
-selecionarAtalhoPeriodo('30d');
-atualizarSeletorEstoqueVR();
-render();
-renderClientes();
-renderVendasRapidas();
-renderEstoque();
-renderOrcamentos();
-if (($('#apiUrl')?.value || '').trim()) carregarDaPlanilha();
 </script>
-
-<footer style="text-align: center; font-size: 12px; color: #6c757d; padding: 8px 0;">
-  Adeilson Casimiro · Dev + IA -
-<span class="rodape-versao">v2.9.5</span>
-</footer>
 </body>
 </html>
