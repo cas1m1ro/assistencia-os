@@ -5392,5 +5392,547 @@ if (sessionStorage.getItem('assistenciaProLogado') === '1') {
 <span class="rodape-versao">v2.9.6</span>
 </footer>
 
+
+<!-- CAIXA DE CHAT GEMINI FLUTUANTE (AUTOCONTIDA) -->
+<style>
+  #geminiFabBtn {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 1900;
+    height: 54px;
+    padding: 0 18px 0 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: linear-gradient(135deg, #2563eb 0%, #7c3aed 55%, #db2777 100%);
+    color: #ffffff;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 0.2px;
+    box-shadow: 0 12px 30px rgba(99, 102, 241, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+  }
+  #geminiFabBtn:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 16px 36px rgba(124, 58, 237, 0.55);
+    filter: brightness(1.06);
+  }
+  #geminiFabBtn .gem-spark {
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.18);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+  }
+
+  #geminiChatBox {
+    position: fixed;
+    right: 20px;
+    bottom: 86px;
+    z-index: 1950;
+    width: min(410px, calc(100vw - 24px));
+    height: min(565px, calc(100vh - 112px));
+    border-radius: 20px;
+    border: 1px solid rgba(139, 92, 246, 0.38);
+    background: var(--panel, #0d152b);
+    color: var(--text, #f8fafc);
+    box-shadow: 0 24px 68px rgba(2, 6, 23, 0.72), 0 0 36px rgba(99, 102, 241, 0.2);
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+    backdrop-filter: blur(14px);
+  }
+  #geminiChatBox.aberto {
+    display: flex;
+    animation: gemPopIn 0.16s ease-out;
+  }
+  @keyframes gemPopIn {
+    from { opacity: 0; transform: translateY(10px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .gem-head {
+    padding: 13px 15px;
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.24), rgba(124, 58, 237, 0.22));
+    border-bottom: 1px solid var(--line, #263866);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  body.light-theme .gem-head {
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(124, 58, 237, 0.1));
+  }
+  .gem-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .gem-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.35);
+  }
+  .gem-title {
+    font-weight: 800;
+    font-size: 14px;
+    line-height: 1.15;
+    background: linear-gradient(90deg, #60a5fa, #c084fc, #f472b6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  body.light-theme .gem-title {
+    background: linear-gradient(90deg, #1d4ed8, #7e22ce, #be185d);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .gem-status {
+    font-size: 11px;
+    color: var(--muted, #94a3b8);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .gem-icon-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 9px;
+    font-size: 13px;
+    background: var(--card, #131f3d);
+    border: 1px solid var(--line, #263866);
+    color: var(--text, #f8fafc);
+  }
+
+  .gem-cfg {
+    display: none;
+    padding: 11px 14px;
+    background: var(--card, #131f3d);
+    border-bottom: 1px solid var(--line, #263866);
+    font-size: 12px;
+  }
+  .gem-cfg.aberto { display: block; }
+
+  .gem-chips {
+    padding: 8px 12px;
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--line, #263866);
+    background: rgba(19, 31, 61, 0.45);
+    scrollbar-width: thin;
+  }
+  body.light-theme .gem-chips {
+    background: rgba(248, 250, 252, 0.9);
+  }
+  .gem-chip {
+    flex-shrink: 0;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    border: 1px solid var(--line, #263866);
+    background: var(--card, #131f3d);
+    color: var(--text, #f8fafc);
+    cursor: pointer;
+  }
+  .gem-chip:hover {
+    border-color: #8b5cf6;
+  }
+
+  .gem-msgs {
+    flex: 1;
+    padding: 14px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .gem-bubble {
+    max-width: 86%;
+    padding: 10px 13px;
+    border-radius: 14px;
+    font-size: 13px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .gem-bubble.bot {
+    align-self: flex-start;
+    background: var(--card, #131f3d);
+    border: 1px solid var(--line, #263866);
+    border-bottom-left-radius: 4px;
+  }
+  .gem-bubble.user {
+    align-self: flex-end;
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    color: #ffffff;
+    border-bottom-right-radius: 4px;
+    box-shadow: 0 6px 16px rgba(79, 70, 229, 0.3);
+  }
+
+  .gem-foot {
+    padding: 10px 12px;
+    border-top: 1px solid var(--line, #263866);
+    background: var(--panel, #0d152b);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .gem-foot input {
+    flex: 1;
+    min-width: 0;
+    padding: 9px 12px;
+    border-radius: 11px;
+    font-size: 13px;
+  }
+  .gem-send-btn {
+    padding: 9px 14px;
+    border-radius: 11px;
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    border: none;
+    color: #fff;
+    font-weight: 700;
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+
+  @media print {
+    #geminiFabBtn, #geminiChatBox { display: none !important; }
+  }
+</style>
+
+<button id="geminiFabBtn" type="button" title="Abrir Chat Gemini" aria-label="Abrir Chat Gemini">
+  <span class="gem-spark">✦</span>
+  <span>Gemini</span>
+</button>
+
+<section id="geminiChatBox" role="dialog" aria-label="Chat Gemini">
+  <div class="gem-head">
+    <div class="gem-brand">
+      <div class="gem-avatar">✦</div>
+      <div style="min-width:0">
+        <div class="gem-title">Gemini • Assistente StartCell</div>
+        <div id="gemStatusText" class="gem-status">Celulares, Notebooks e PC Gamer • Pronto</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;flex-shrink:0">
+      <button id="gemCfgBtn" type="button" class="gem-icon-btn" title="Configurar chave da API Gemini">🔑</button>
+      <button id="gemClearBtn" type="button" class="gem-icon-btn" title="Limpar conversa">🧹</button>
+      <button id="gemCloseBtn" type="button" class="gem-icon-btn" title="Fechar chat">✕</button>
+    </div>
+  </div>
+
+  <div id="gemCfgPanel" class="gem-cfg">
+    <label class="field" style="margin-top:0">Chave da API do Gemini (salva neste navegador)</label>
+    <input id="gemApiKeyInput" type="password" placeholder="Cole sua chave AIza..." style="margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <span class="muted" style="font-size:11px">Sem chave: usa atalhos locais da loja.</span>
+      <button id="gemSaveKeyBtn" type="button" class="success sm">Salvar Chave</button>
+    </div>
+  </div>
+
+  <div class="gem-chips" aria-label="Atalhos rápidos">
+    <button type="button" class="gem-chip" data-prompt="Resumo rápido de OSs, clientes e estoque">📊 Resumo Loja</button>
+    <button type="button" class="gem-chip" data-prompt="Escreva uma mensagem curta e educada no WhatsApp avisando que o orçamento do aparelho está pronto">💬 WhatsApp Orçamento</button>
+    <button type="button" class="gem-chip" data-prompt="Dê um checklist rápido de diagnóstico para notebook ou PC gamer que não dá vídeo">🖥️ Sem Vídeo (PC/Note)</button>
+    <button type="button" class="gem-chip" data-prompt="Pesquise especificações, tela compatível e detalhes técnicos de qual modelo?">🔎 Pesquisar Modelo</button>
+  </div>
+
+  <div id="gemMsgsBox" class="gem-msgs">
+    <div class="gem-bubble bot">Olá, Adeilson! Aqui é sua caixa do <strong>Gemini</strong> integrada ao sistema. Posso ajudar com diagnósticos de celulares, notebooks e PC gamer, textos de WhatsApp ou resumo de OSs e estoque.</div>
+  </div>
+
+  <form id="gemChatForm" class="gem-foot">
+    <input id="gemChatInput" type="text" placeholder="Pergunte ao Gemini..." autocomplete="off">
+    <button type="submit" class="gem-send-btn">Enviar</button>
+  </form>
+</section>
+
+<script>
+(function () {
+  const GEM_KEY_STORAGE = 'assistenciaProGeminiApiKey';
+
+  function obterBaseLoja() {
+    if (window.db && typeof window.db === 'object') return window.db;
+    try {
+      const raw = localStorage.getItem('assistenciaProDB');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return {};
+  }
+
+  function resumoNaoFinanceiroLoja() {
+    const d = obterBaseLoja();
+    const osList = Array.isArray(d.orders) ? d.orders : [];
+    const abertas = osList.filter(o => String(o.status || '').toLowerCase() !== 'entregue').length;
+    const cliCount = Array.isArray(d.clients) ? d.clients.length : 0;
+    const parts = Array.isArray(d.parts) ? d.parts : [];
+    const totalUnid = parts.reduce((acc, p) => acc + (Number(p.qty) || 0), 0);
+    const vrCount = Array.isArray(d.quickSales) ? d.quickSales.length : 0;
+    return `OSs: ${osList.length} (${abertas} em aberto/andamento) • Clientes: ${cliCount} • Estoque: ${parts.length} itens (${totalUnid} un.) • Vendas rápidas: ${vrCount}`;
+  }
+
+  function escaparHtmlGem(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function montarLinksPesquisaHtml(termo) {
+    const q = encodeURIComponent(String(termo || '').trim());
+    if (!q) return '';
+    return `
+      <div style="margin-top:9px;padding-top:8px;border-top:1px dashed var(--line, #263866);display:flex;flex-wrap:wrap;gap:6px">
+        <a href="https://www.google.com/search?q=${q}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:4px;padding:5px 9px;border-radius:8px;background:rgba(59,130,246,0.18);border:1px solid #3b82f6;color:inherit;text-decoration:none;font-size:11.5px;font-weight:700">🔎 Google</a>
+        <a href="https://www.tudocelular.com/?sName=${q}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:4px;padding:5px 9px;border-radius:8px;background:rgba(168,85,247,0.18);border:1px solid #a855f7;color:inherit;text-decoration:none;font-size:11.5px;font-weight:700">📱 Ficha Técnica</a>
+        <a href="https://lista.mercadolivre.com.br/${q}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:4px;padding:5px 9px;border-radius:8px;background:rgba(234,179,8,0.18);border:1px solid #eab308;color:inherit;text-decoration:none;font-size:11.5px;font-weight:700">🛒 Peças / Preços</a>
+      </div>`;
+  }
+
+  function preencherBolhaComLinks(el, texto, termoBusca, fontesApi) {
+    if (!el) return;
+    let html = escaparHtmlGem(texto).replace(
+      /(https?:\/\/[^\s<]+)/g,
+      '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:#60a5fa;text-decoration:underline;word-break:break-all">$1</a>'
+    );
+
+    if (Array.isArray(fontesApi) && fontesApi.length) {
+      const linksFontes = fontesApi.slice(0, 4).map(f =>
+        `<a href="${escaparHtmlGem(f.uri)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin:3px 4px 0 0;padding:4px 8px;border-radius:7px;background:rgba(34,197,94,0.16);border:1px solid #22c55e;color:inherit;text-decoration:none;font-size:11px;font-weight:700">🔗 ${escaparHtmlGem(f.title || 'Abrir fonte')}</a>`
+      ).join('');
+      html += `<div style="margin-top:8px;padding-top:7px;border-top:1px dashed var(--line, #263866)"><div style="font-size:11px;opacity:.8;margin-bottom:2px">Links encontrados:</div>${linksFontes}</div>`;
+    }
+
+    html += montarLinksPesquisaHtml(termoBusca);
+    el.innerHTML = html;
+    const box = document.getElementById('gemMsgsBox');
+    if (box) box.scrollTop = box.scrollHeight;
+  }
+
+  function adicionarBolha(tipo, htmlOuTexto, isHtml) {
+    const box = document.getElementById('gemMsgsBox');
+    if (!box) return null;
+    const el = document.createElement('div');
+    el.className = `gem-bubble ${tipo}`;
+    if (isHtml) el.innerHTML = htmlOuTexto;
+    else el.textContent = htmlOuTexto;
+    box.appendChild(el);
+    box.scrollTop = box.scrollHeight;
+    return el;
+  }
+
+  function alternarCaixaGemini(forcar) {
+    const box = document.getElementById('geminiChatBox');
+    if (!box) return;
+    const vaiAbrir = typeof forcar === 'boolean' ? forcar : !box.classList.contains('aberto');
+    box.classList.toggle('aberto', vaiAbrir);
+    if (vaiAbrir) {
+      setTimeout(() => document.getElementById('gemChatInput')?.focus(), 50);
+    }
+  }
+
+  function alternarConfigGemini() {
+    const panel = document.getElementById('gemCfgPanel');
+    const inp = document.getElementById('gemApiKeyInput');
+    if (!panel) return;
+    const vaiAbrir = !panel.classList.contains('aberto');
+    panel.classList.toggle('aberto', vaiAbrir);
+    if (vaiAbrir && inp) {
+      inp.value = localStorage.getItem(GEM_KEY_STORAGE) || '';
+      inp.focus();
+    }
+  }
+
+  function salvarChaveGemini() {
+    const inp = document.getElementById('gemApiKeyInput');
+    const chave = (inp?.value || '').trim();
+    localStorage.setItem(GEM_KEY_STORAGE, chave);
+    document.getElementById('gemCfgPanel')?.classList.remove('aberto');
+    adicionarBolha(
+      'bot',
+      chave
+        ? 'Chave da API do Gemini salva neste navegador! Agora suas mensagens vão direto para o Gemini.'
+        : 'Chave removida. Vou responder usando os atalhos locais da loja.'
+    );
+  }
+
+  function limparConversaGemini() {
+    const box = document.getElementById('gemMsgsBox');
+    if (!box) return;
+    box.innerHTML = '<div class="gem-bubble bot">Conversa limpa. Como posso ajudar agora?</div>';
+  }
+
+  function respostaLocalFallback(msg) {
+    const q = msg.toLowerCase();
+    const base = obterBaseLoja();
+    const nomeLoja = (base.empresa && base.empresa.nome) || 'StartCell';
+    const resumo = resumoNaoFinanceiroLoja();
+
+    if (q.includes('resumo') || q.includes('os') || q.includes('estoque') || q.includes('cliente')) {
+      return `Resumo atual (${nomeLoja}):
+• ${resumo}
+
+Toque em 🔑 no topo para conectar sua chave da API do Gemini.`;
+    }
+    if (q.includes('whatsapp') || q.includes('orçamento') || q.includes('orcamento')) {
+      return `Olá! Aqui é da ${nomeLoja}. Já concluímos a análise do seu aparelho e o orçamento ficou em R$ [VALOR], com previsão de [PRAZO]. Posso seguir com o serviço?`;
+    }
+    if (q.includes('vídeo') || q.includes('video') || q.includes('notebook') || q.includes('pc')) {
+      return `Checklist rápido (Sem vídeo — Notebook / PC Gamer):
+1. Teste com monitor/TV externa e outro cabo.
+2. Limpe contatos da memória RAM e teste com 1 pente por vez.
+3. Faça reset de BIOS/CMOS e verifique alimentação/tensões.
+4. Se for notebook, observe bips/LEDs e teste sem SSD/HD.`;
+    }
+    return `Recebi: "${msg}"
+
+${resumo}
+
+Clique em 🔑 acima para salvar sua chave da API do Gemini e ter respostas completas.`;
+  }
+
+  async function chamarModeloGemini(apiKey, modelo, msg, contexto, usarBusca) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const payload = {
+      systemInstruction: {
+        parts: [{
+          text: `Você é um assistente técnico e operacional em português do Brasil para a assistência ${((obterBaseLoja().empresa && obterBaseLoja().empresa.nome) || 'StartCell')} (celulares, notebooks e PC gamer). Ajude a pesquisar modelos de celulares, notebooks, placas, telas, baterias, especificações, compatibilidades e dúvidas gerais. Seja direto, claro e prático. Dados atuais da loja: ${contexto}`
+        }]
+      },
+      contents: [{
+        role: 'user',
+        parts: [{ text: msg }]
+      }]
+    };
+    if (usarBusca) {
+      payload.tools = [{ google_search: {} }];
+    }
+
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!resp.ok) {
+      let detalhe = '';
+      try {
+        const errJson = await resp.json();
+        detalhe = errJson?.error?.message ? ` - ${errJson.error.message}` : '';
+      } catch {}
+      throw new Error(`HTTP ${resp.status}${detalhe}`);
+    }
+    const json = await resp.json();
+    const cand = json?.candidates?.[0];
+    const texto = cand?.content?.parts?.map(p => p.text || '').join('').trim();
+    const chunks = cand?.groundingMetadata?.groundingChunks || [];
+    const fontes = chunks
+      .map(c => c?.web)
+      .filter(w => w && w.uri)
+      .map(w => ({ title: w.title || w.uri, uri: w.uri }));
+    return {
+      texto: texto || 'Não recebi texto de resposta.',
+      fontes
+    };
+  }
+
+  async function perguntarGemini(msg) {
+    const apiKey = (localStorage.getItem(GEM_KEY_STORAGE) || '').trim();
+    if (!apiKey) {
+      return { texto: respostaLocalFallback(msg), fontes: [] };
+    }
+
+    const contexto = resumoNaoFinanceiroLoja();
+    const tentativas = [
+      { modelo: 'gemini-2.5-flash', busca: true },
+      { modelo: 'gemini-2.5-flash', busca: false },
+      { modelo: 'gemini-2.0-flash', busca: false }
+    ];
+
+    let ultimoErro = null;
+    for (const t of tentativas) {
+      try {
+        return await chamarModeloGemini(apiKey, t.modelo, msg, contexto, t.busca);
+      } catch (err) {
+        ultimoErro = err;
+      }
+    }
+    throw ultimoErro || new Error('Falha ao conectar');
+  }
+
+  async function enviarPergunta(texto) {
+    const pergunta = String(texto || '').trim();
+    if (!pergunta) return;
+
+    const inp = document.getElementById('gemChatInput');
+    const statusEl = document.getElementById('gemStatusText');
+    if (inp) inp.value = '';
+
+    adicionarBolha('user', pergunta);
+    const bolhaEspera = adicionarBolha('bot', 'Consultando Gemini...');
+    if (statusEl) statusEl.textContent = 'Pensando...';
+
+    try {
+      const resp = await perguntarGemini(pergunta);
+      preencherBolhaComLinks(bolhaEspera, resp.texto, pergunta, resp.fontes);
+    } catch (err) {
+      const msgErro = `Não conectou à API (${err.message}).
+
+` + respostaLocalFallback(pergunta);
+      preencherBolhaComLinks(bolhaEspera, msgErro, pergunta, []);
+    } finally {
+      if (statusEl) statusEl.textContent = 'Celulares, Notebooks e PC Gamer • Pronto';
+    }
+  }
+
+  function iniciarWidgetGemini() {
+    document.getElementById('geminiFabBtn')?.addEventListener('click', () => alternarCaixaGemini());
+    document.getElementById('gemCloseBtn')?.addEventListener('click', () => alternarCaixaGemini(false));
+    document.getElementById('gemCfgBtn')?.addEventListener('click', alternarConfigGemini);
+    document.getElementById('gemClearBtn')?.addEventListener('click', limparConversaGemini);
+    document.getElementById('gemSaveKeyBtn')?.addEventListener('click', salvarChaveGemini);
+
+    document.querySelectorAll('#geminiChatBox .gem-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        alternarCaixaGemini(true);
+        enviarPergunta(btn.getAttribute('data-prompt') || '');
+      });
+    });
+
+    document.getElementById('gemChatForm')?.addEventListener('submit', e => {
+      e.preventDefault();
+      const inp = document.getElementById('gemChatInput');
+      enviarPergunta(inp ? inp.value : '');
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', iniciarWidgetGemini);
+  } else {
+    iniciarWidgetGemini();
+  }
+})();
+</script>
+
 </body>
 </html>
