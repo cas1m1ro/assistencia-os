@@ -673,7 +673,32 @@
     vertical-align: 0;
     color: #ffffff;
   }
+/* Aumenta a logo no canto superior da tela (#headerLogo) */
+#headerLogo {
+  display: inline-flex !important;
+  align-items: center !important;
+  max-height: none !important;
+  height: auto !important;
+  overflow: visible !important;
+}
 
+#headerLogo img {
+  max-height: 58px !important; /* Teste 58px, 68px ou 80px conforme o espaço do topo */
+  width: auto !important;
+  height: auto !important;
+  max-width: none !important;
+  object-fit: contain !important;
+  display: block !important;
+}
+/* Bordas arredondadas na logo do topo (#headerLogo) */
+#headerLogo {
+  border-radius: 12px !important; /* Ajuste para 8px, 12px, 16px ou 50% (redonda) */
+  overflow: hidden !important;
+}
+
+#headerLogo img {
+  border-radius: 12px !important; /* Mesmo valor para acompanhar a moldura */
+}
 </style>
 </head>
 <body>
