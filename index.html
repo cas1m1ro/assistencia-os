@@ -5894,6 +5894,23 @@ if (sessionStorage.getItem('assistenciaProLogado') === '1') {
   @media print {
     #geminiFabBtn, #geminiChatBox { display: none !important; }
   }
+/* Aumenta a logo no canto superior da tela (#headerLogo) */
+#headerLogo {
+  display: inline-flex !important;
+  align-items: center !important;
+  max-height: none !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+#headerLogo img {
+  max-height: 58px !important; /* Teste 58px, 68px ou 80px conforme o espaço do topo */
+  width: auto !important;
+  height: auto !important;
+  max-width: none !important;
+  object-fit: contain !important;
+  display: block !important;
+}
 </style>
 
 <button id="geminiFabBtn" type="button" title="Abrir Chat Gemini" aria-label="Abrir Chat Gemini">
